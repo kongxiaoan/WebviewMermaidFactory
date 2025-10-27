@@ -3,6 +3,7 @@ package com.tcm.lib.webview.factory
 import android.content.Context
 import android.os.Handler
 import android.os.HandlerThread
+import android.os.Looper
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.atomic.AtomicBoolean
@@ -57,16 +58,19 @@ class WebViewFactory private constructor(
         // 初始化 WebView 对象池
         webViewPool = WebViewPool(context, workerCount, maxPoolSize)
 
-        // 初始化 Workers
-        workers = Array(workerCount) { index ->
-            WebViewWorker(index, webViewPool)
-        }
-
-        // 创建工作线程
+        // 创建工作线程（必须在创建 Worker 之前）
         workerThread = HandlerThread("WebViewFactory-Worker-Thread").apply {
             start()
         }
         workerHandler = Handler(workerThread.looper)
+        
+        // 创建主线程 Handler
+        val mainHandler = Handler(Looper.getMainLooper())
+
+        // 初始化 Workers
+        workers = Array(workerCount) { index ->
+            WebViewWorker(index, webViewPool, mainHandler)
+        }
 
         // 启动任务调度
         startScheduler()

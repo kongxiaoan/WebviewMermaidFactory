@@ -1,10 +1,13 @@
 package com.tcm.webviewfactory
 
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -12,6 +15,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import com.tcm.lib.webview.factory.*
 import com.tcm.webviewfactory.ui.theme.WebviewFactoryTheme
@@ -168,19 +173,59 @@ class DemoActivity : ComponentActivity() {
             Column(
                 modifier = Modifier.padding(12.dp)
             ) {
-                Text(
-                    text = if (item.isSuccess) "✅ 成功" else "❌ 失败",
-                    style = MaterialTheme.typography.titleSmall
-                )
-                Text(
-                    text = "任务ID: ${item.taskId}",
-                    style = MaterialTheme.typography.bodySmall
-                )
-                Text(
-                    text = item.message,
-                    style = MaterialTheme.typography.bodySmall
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = if (item.isSuccess) "✅ 成功" else "❌ 失败",
+                            style = MaterialTheme.typography.titleSmall
+                        )
+                        Text(
+                            text = "任务ID: ${item.taskId.take(8)}...",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                        Text(
+                            text = item.message,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                    
+                    // 显示图片预览
+                    if (item.isSuccess && item.imagePath != null) {
+                        ImagePreview(imagePath = item.imagePath)
+                    }
+                }
             }
+        }
+    }
+    
+    @Composable
+    fun ImagePreview(imagePath: String) {
+        val bitmap = remember(imagePath) {
+            try {
+                val file = File(imagePath)
+                if (file.exists()) {
+                    BitmapFactory.decodeFile(file.absolutePath)
+                } else {
+                    null
+                }
+            } catch (e: Exception) {
+                null
+            }
+        }
+        
+        bitmap?.let { bmp ->
+            Image(
+                bitmap = bmp.asImageBitmap(),
+                contentDescription = "Rendered Image",
+                modifier = Modifier
+                    .size(80.dp)
+                    .padding(start = 8.dp),
+                contentScale = ContentScale.Fit
+            )
         }
     }
     
@@ -212,7 +257,9 @@ class DemoActivity : ComponentActivity() {
                         onComplete(RenderResultItem(
                             taskId = result.taskId,
                             isSuccess = true,
-                            message = "已保存: ${file.name} (${result.imageData.size / 1024}KB)"
+                            message = "已保存: ${file.name} (${result.imageData.size / 1024}KB)",
+                            imagePath = file.absolutePath,
+                            imageData = result.imageData
                         ))
                         
                         Log.d(TAG, "✅ 单个任务完成: ${file.absolutePath}")
@@ -258,7 +305,9 @@ class DemoActivity : ComponentActivity() {
                         results.add(RenderResultItem(
                             taskId = result.taskId,
                             isSuccess = true,
-                            message = "批量 ${results.size + 1}/${tasks.size}: ${file.name}"
+                            message = "批量 ${results.size + 1}/${tasks.size}: ${file.name}",
+                            imagePath = file.absolutePath,
+                            imageData = result.imageData
                         ))
                         
                         Log.d(TAG, "✅ 批量任务 ${results.size}/${tasks.size} 完成")
@@ -304,7 +353,9 @@ class DemoActivity : ComponentActivity() {
                         results.add(RenderResultItem(
                             taskId = result.taskId,
                             isSuccess = true,
-                            message = "流式 ${results.size + 1}: ${file.name}"
+                            message = "流式 ${results.size + 1}: ${file.name}",
+                            imagePath = file.absolutePath,
+                            imageData = result.imageData
                         ))
                         
                         Log.d(TAG, "⌨️ 流式任务 ${results.size} 完成")
@@ -343,7 +394,34 @@ class DemoActivity : ComponentActivity() {
     data class RenderResultItem(
         val taskId: String,
         val isSuccess: Boolean,
-        val message: String
-    )
+        val message: String,
+        val imagePath: String? = null,
+        val imageData: ByteArray? = null
+    ) {
+        override fun equals(other: Any?): Boolean {
+            if (this === other) return true
+            if (other !is RenderResultItem) return false
+            
+            if (taskId != other.taskId) return false
+            if (isSuccess != other.isSuccess) return false
+            if (message != other.message) return false
+            if (imagePath != other.imagePath) return false
+            if (imageData != null) {
+                if (other.imageData == null) return false
+                if (!imageData.contentEquals(other.imageData)) return false
+            } else if (other.imageData != null) return false
+            
+            return true
+        }
+        
+        override fun hashCode(): Int {
+            var result = taskId.hashCode()
+            result = 31 * result + isSuccess.hashCode()
+            result = 31 * result + message.hashCode()
+            result = 31 * result + (imagePath?.hashCode() ?: 0)
+            result = 31 * result + (imageData?.contentHashCode() ?: 0)
+            return result
+        }
+    }
 }
 

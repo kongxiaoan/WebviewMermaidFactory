@@ -20,7 +20,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 class WebViewWorker(
     private val workerId: Int,
     private val webViewPool: WebViewPool,
-    private val mainHandler: Handler = Handler(Looper.getMainLooper())
+    private val mainHandler: Handler
 ) {
     @Volatile
     private var currentTask: MermaidRenderTask? = null
@@ -29,7 +29,7 @@ class WebViewWorker(
     private var callback: RenderCallback? = null
     
     private val isWorking = AtomicBoolean(false)
-
+    
     /**
      * 执行渲染任务
      */
@@ -43,24 +43,24 @@ class WebViewWorker(
             )
             return
         }
-
+        
         this.currentTask = task
         this.callback = callback
-
+        
         try {
-            val webView = webViewPool.acquire()
-            if (webView == null) {
-                callback.onRenderComplete(
-                    RenderResult.Error(
-                        task.id,
-                        "Failed to acquire WebView from pool"
-                    )
-                )
-                isWorking.set(false)
-                return
-            }
-
+            // WebView 必须在主线程操作
             mainHandler.post {
+                val webView = webViewPool.acquire()
+                if (webView == null) {
+                    callback.onRenderComplete(
+                        RenderResult.Error(
+                            task.id,
+                            "Failed to acquire WebView from pool"
+                        )
+                    )
+                    isWorking.set(false)
+                    return@post
+                }
                 renderMermaid(webView, task, callback)
             }
         } catch (e: Exception) {
@@ -74,7 +74,7 @@ class WebViewWorker(
             isWorking.set(false)
         }
     }
-
+    
     /**
      * 使用 WebView 渲染 Mermaid 图表
      */
@@ -108,7 +108,7 @@ class WebViewWorker(
             isWorking.set(false)
         }
     }
-
+    
     /**
      * 配置 WebView 设置
      */
@@ -125,13 +125,13 @@ class WebViewWorker(
             loadWithOverviewMode = true
             useWideViewPort = true
         }
-
+        
         // 添加 JavaScript 接口
         webView.addJavascriptInterface(
             RenderBridge(task, callback, webView),
             "AndroidBridge"
         )
-
+        
         webView.webViewClient = object : WebViewClient() {
             override fun onPageFinished(view: WebView?, url: String?) {
                 super.onPageFinished(view, url)
@@ -139,10 +139,10 @@ class WebViewWorker(
                 callback.onProgress(task.id, 50)
             }
         }
-
+        
         webView.webChromeClient = WebChromeClient()
     }
-
+    
     /**
      * 构建 Mermaid HTML 模板
      */
@@ -214,7 +214,7 @@ ${task.mermaidCode}
 </html>
         """.trimIndent()
     }
-
+    
     /**
      * JavaScript 桥接对象
      */
@@ -229,7 +229,7 @@ ${task.mermaidCode}
                 callback.onProgress(task.id, progress)
             }
         }
-
+        
         @JavascriptInterface
         fun onRenderComplete() {
             mainHandler.post {
@@ -238,7 +238,7 @@ ${task.mermaidCode}
                 captureWebViewImage(webView, task, callback)
             }
         }
-
+        
         @JavascriptInterface
         fun onError(error: String) {
             mainHandler.post {
@@ -253,7 +253,7 @@ ${task.mermaidCode}
             }
         }
     }
-
+    
     /**
      * 截取 WebView 内容为图片
      */
@@ -266,7 +266,7 @@ ${task.mermaidCode}
             // 启用绘图缓存
             webView.isDrawingCacheEnabled = true
             webView.buildDrawingCache()
-
+            
             // 创建 Bitmap
             val bitmap = Bitmap.createBitmap(
                 task.width,
@@ -275,7 +275,7 @@ ${task.mermaidCode}
             )
             val canvas = android.graphics.Canvas(bitmap)
             webView.draw(canvas)
-
+            
             // 转换为字节数组
             val outputStream = ByteArrayOutputStream()
             val compressFormat = when (task.format) {
@@ -286,13 +286,13 @@ ${task.mermaidCode}
             
             bitmap.compress(compressFormat, task.quality, outputStream)
             val imageData = outputStream.toByteArray()
-
+            
             // 清理资源
             webView.isDrawingCacheEnabled = false
             webView.destroyDrawingCache()
             bitmap.recycle()
             outputStream.close()
-
+            
             // 返回结果
             callback.onProgress(task.id, 100)
             callback.onRenderComplete(
@@ -302,7 +302,7 @@ ${task.mermaidCode}
                     task.format
                 )
             )
-
+            
         } catch (e: Exception) {
             callback.onRenderComplete(
                 RenderResult.Error(
@@ -318,12 +318,12 @@ ${task.mermaidCode}
             this.callback = null
         }
     }
-
+    
     /**
      * 检查 Worker 是否空闲
      */
     fun isIdle(): Boolean = !isWorking.get()
-
+    
     /**
      * 获取当前任务
      */
